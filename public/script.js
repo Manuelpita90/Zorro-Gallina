@@ -47,7 +47,8 @@ const INITIAL_ZORROS = 2;
 let validNodes = new Set();
 let gameState = {
     pieces: [], // { id, type: 'gallina'|'zorro', x, y }
-    turn: 'gallina'
+    turn: 'gallina',
+    forcedId: null // ID de la pieza que está obligada a seguir capturando
 };
 let myRole = null;
 let selectedPiece = null;
@@ -196,6 +197,10 @@ function onPieceClick(piece, e) {
         showMessage('Esa no es tu pieza!', 'red');
         return;
     }
+    if (gameState.forcedId && gameState.forcedId !== piece.id) {
+        showMessage('¡Debes continuar capturando con esta pieza!', 'red');
+        return;
+    }
 
     selectedPiece = piece;
     renderPieces();
@@ -261,20 +266,86 @@ function onNodeClick(x, y) {
         newPieces[movedPieceIndex].x = x;
         newPieces[movedPieceIndex].y = y;
 
-        const nextTurn = gameState.turn === 'gallina' ? 'zorro' : 'gallina';
+        let nextTurn = gameState.turn === 'gallina' ? 'zorro' : 'gallina';
+        let nextForcedId = null;
+
+        // Lógica de Captura Múltiple para el Zorro
+        if (myRole === 'zorro' && isCapture) {
+            if (canZorroCaptureFrom(x, y)) {
+                nextTurn = 'zorro'; // El turno sigue siendo del zorro
+                nextForcedId = selectedPiece.id; // Obligar a usar la misma pieza
+                showMessage('¡Sigue capturando!', '#39ff14');
+            }
+        }
 
         // Emit move
-        socket.emit('move', { pieces: newPieces, turn: nextTurn });
+        socket.emit('move', { pieces: newPieces, turn: nextTurn, forcedId: nextForcedId });
 
         const movedId = selectedPiece.id;
         // Apply locally
         gameState.pieces = newPieces;
         gameState.turn = nextTurn;
-        selectedPiece = null;
+        gameState.forcedId = nextForcedId;
+
+        // Si hay captura múltiple, mantenemos la selección actualizada
+        if (nextForcedId) {
+            selectedPiece.x = x;
+            selectedPiece.y = y;
+        } else {
+            selectedPiece = null;
+        }
+
         updateStatus();
         renderPieces(movedId);
         checkWinCondition();
     }
+}
+
+function canGallinasMove() {
+    const gallinas = gameState.pieces.filter(p => p.type === 'gallina');
+    for (const g of gallinas) {
+        // Revisar vecinos (dx, dy entre -1 y 1)
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const tx = g.x + dx;
+                const ty = g.y + dy;
+
+                // Las gallinas no pueden moverse hacia atrás (y no puede aumentar)
+                if (ty > g.y) continue;
+
+                if (isValidMoveBasic(g.x, g.y, tx, ty)) {
+                    if (!getPieceAt(tx, ty)) return true; // Hay al menos un movimiento válido
+                }
+            }
+        }
+    }
+    return false;
+}
+
+function canZorroCaptureFrom(x, y) {
+    const dirs = [
+        [0, -1], [0, 1], [-1, 0], [1, 0], // Ortogonales
+        [-1, -1], [1, -1], [-1, 1], [1, 1] // Diagonales
+    ];
+
+    for (const [dx, dy] of dirs) {
+        const midX = x + dx;
+        const midY = y + dy;
+        const endX = x + dx * 2;
+        const endY = y + dy * 2;
+
+        // Verificar que el salto sea geométricamente válido (ambos pasos)
+        if (isValidMoveBasic(x, y, midX, midY) && isValidMoveBasic(midX, midY, endX, endY)) {
+            const midPiece = getPieceAt(midX, midY);
+            const endPiece = getPieceAt(endX, endY);
+            // Debe haber gallina en medio y destino vacío
+            if (midPiece && midPiece.type === 'gallina' && !endPiece) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 function canZorroMove() {
@@ -328,9 +399,14 @@ function checkWinCondition() {
         return;
     }
 
-    // Gallinas ganan si los Zorros no pueden moverse (Ahogo/Stalemate)
-    // Solo verificamos esto si es el turno del Zorro (o acaba de terminar el turno de Gallina)
-    if (!canZorroMove()) {
+    // Zorros ganan si las Gallinas no tienen movimientos (Bloqueo)
+    if (gameState.turn === 'gallina' && !canGallinasMove()) {
+        socket.emit('gameOver', 'zorros');
+        return;
+    }
+
+    // Gallinas ganan si los Zorros no pueden moverse (Ahogo)
+    if (gameState.turn === 'zorro' && !canZorroMove()) {
         socket.emit('gameOver', 'gallinas');
         return;
     }
@@ -630,6 +706,7 @@ socket.on('gameStart', (data) => {
     myRole = data.role;
     roomId = data.roomId;
     gameState.turn = data.turn;
+    gameState.forcedId = null;
     msgP.textContent = '¡Partida encontrada! Eres ' + myRole.toUpperCase();
     msgP.style.color = '#4cc9f0';
     setupInitialPieces();
@@ -649,14 +726,22 @@ socket.on('move', (data) => {
 
     gameState.pieces = data.pieces;
     gameState.turn = data.turn;
-    selectedPiece = null;
+    gameState.forcedId = data.forcedId;
+
+    if (myRole === gameState.turn && gameState.forcedId) {
+        selectedPiece = gameState.pieces.find(p => p.id === gameState.forcedId);
+        showMessage('¡Tienes capturas múltiples!', '#39ff14');
+    } else {
+        selectedPiece = null;
+    }
+
     updateStatus();
     renderPieces(movedId);
-    // checkWinCondition(); // Removed: Only the active player should check win to avoid double emit
 });
 
 socket.on('restartGame', () => {
     gameState.turn = 'gallina';
+    gameState.forcedId = null;
     msgP.textContent = '¡Partida reiniciada! Turno de GALLINA';
     msgP.style.color = '#4cc9f0';
     setupInitialPieces();
