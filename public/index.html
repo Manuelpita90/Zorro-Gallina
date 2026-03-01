@@ -9,8 +9,6 @@
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#141629">
-    <meta http-equiv="refresh" content="0; url=public/index.html">
-    <title>Cargando...</title>
 </head>
 
 <body>
@@ -44,7 +42,7 @@
 
         <main id="board-container">
             <!-- SVG para las líneas del tablero -->
-            <svg id="board-lines" viewBox="-10 -10 620 620" preserveAspectRatio="xMidYMid meet">
+            <svg id="board-lines" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet">
                 <!-- Se generarán dinámicamente o se pueden poner estáticas -->
             </svg>
 
@@ -58,9 +56,8 @@
         <footer>
             <div class="footer-buttons">
                 <button id="btn-rules">Ver Reglas</button>
-                <button id="btn-restart">Reiniciar</button>
                 <div class="voice-wrapper">
-                    <button id="btn-voice" class="voice-btn">🎤 Voz</button>
+                    <button id="btn-voice" class="voice-btn" title="Chat de Voz">🎤</button>
                     <div id="voice-visualizer" class="visualizer hidden">
                         <div class="bar"></div>
                         <div class="bar"></div>
@@ -68,6 +65,7 @@
                         <div class="bar"></div>
                     </div>
                 </div>
+                <button id="btn-restart">Reiniciar</button>
             </div>
             <div id="rules-modal" class="hidden">
                 <div class="modal-content">
@@ -79,6 +77,10 @@
                         NO hacia atrás. Los zorros se mueven 1 espacio en CUALQUIER dirección válida.</p>
                     <p><strong>Captura:</strong> Los zorros saltan sobre una gallina hacia un espacio vacío detrás para
                         capturarla.</p>
+                    <button id="btn-share-qr"
+                        style="background: linear-gradient(45deg, #fca311, #ff5400); margin-bottom: 10px;">Compartir
+                        Juego (QR)</button>
+                    <div id="qr-code-container"></div>
                     <button id="btn-close-rules">Cerrar</button>
                     <div class="game-version">Versión 1.0.0</div>
                     <div class="dev-credit">Desarrollado por AJP-Logic</div>
@@ -124,6 +126,15 @@
             <img src="/img/ajp.png" alt="Logo" class="menu-logo">
             <h2>Menú Principal</h2>
             <button id="btn-find-match">Partida Rápida</button>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button id="btn-vs-pc" style="flex: 1; background: linear-gradient(45deg, #4cc9f0, #4895ef);">Jugar
+                    contra PC</button>
+                <select id="difficulty-select"
+                    style="width: 90px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: white; font-weight: bold; text-align: center; cursor: pointer;">
+                    <option value="easy" style="background: #1d2138;">Fácil</option>
+                    <option value="hard" selected style="background: #1d2138;">Difícil</option>
+                </select>
+            </div>
             <div class="divider"><span>O</span></div>
             <button id="btn-create-private">Crear Sala Privada</button>
             <div class="join-private-container">
@@ -141,9 +152,8 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="script.js"></script>
-    <p>Cargando el juego...</p>
-    <script>window.location.replace("public/index.html");</script>
 </body>
 
 </html>

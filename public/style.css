@@ -1,13 +1,16 @@
 :root {
-    --bg-main: #141629;
-    --board-bg-gradient: linear-gradient(135deg, #d3a360, #9f6630);
-    --text-color: #f8f9fa;
-    --board-line: #6c2b2b;
-    --zorro-color: #e63946;
-    --gallina-color: #f1faee;
-    --node-bg: rgba(255, 255, 255, 0.2);
-    --node-border: #6c2b2b;
-    --active-shadow: 0 0 15px 4px #4cc9f0;
+    --bg-main: #0f172a;
+    --text-color: #ffffff;
+    --board-bg: rgba(255, 255, 255, 0.05);
+    --board-border: rgba(255, 255, 255, 0.1);
+    --line-color: rgba(255, 255, 255, 0.15);
+    --zorro-color: #ff2a6d;
+    /* Neón Rosa Moderno */
+    --gallina-color: #05d9e8;
+    /* Neón Cyan Moderno */
+    --node-bg: rgba(255, 255, 255, 0.05);
+    --node-border: rgba(255, 255, 255, 0.2);
+    --active-shadow: 0 0 25px 5px rgba(255, 255, 255, 0.5);
 }
 
 * {
@@ -17,7 +20,8 @@
 }
 
 body {
-    background-color: var(--bg-main);
+    background: var(--bg-main);
+    background-image: radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%), radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 1) 0, transparent 50%), radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 1) 0, transparent 50%);
     color: var(--text-color);
     font-family: 'Outfit', sans-serif;
     display: flex;
@@ -66,7 +70,7 @@ body {
 header h1 {
     font-size: 2.5rem;
     margin-bottom: 10px;
-    background: linear-gradient(90deg, #ff9e00, #ff0054);
+    background: linear-gradient(90deg, var(--gallina-color), var(--zorro-color));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -178,28 +182,28 @@ header h1 {
     width: 100%;
     max-width: 500px;
     aspect-ratio: 1;
-    /* Square */
-    background: var(--board-bg-gradient);
-    border-radius: 10px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.3);
-    border: 12px solid #5a3a22;
-    /* Wooden frame looking */
+    /* Estilo Cristal (Glassmorphism) */
+    background: var(--board-bg);
+    border-radius: 24px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--board-border);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     user-select: none;
-    /* Evita seleccionar texto al tocar rápido */
     -webkit-user-select: none;
     transition: border-color 0.5s ease, box-shadow 0.5s ease, background 0.5s ease;
 }
 
 .board-turn-zorro {
-    background: linear-gradient(135deg, #d3a360, #7a2e2e) !important;
-    border-color: #8a3324 !important;
-    box-shadow: 0 0 25px rgba(230, 57, 70, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.3) !important;
+    background: var(--board-bg) !important;
+    border-color: var(--zorro-color) !important;
+    box-shadow: 0 0 30px rgba(255, 42, 109, 0.2), inset 0 0 20px rgba(0, 0, 0, 0.2) !important;
 }
 
 .board-turn-gallina {
-    background: linear-gradient(135deg, #e6c288, #9f6630) !important;
-    border-color: #d4a373 !important;
-    box-shadow: 0 0 25px rgba(241, 250, 238, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.3) !important;
+    background: var(--board-bg) !important;
+    border-color: var(--gallina-color) !important;
+    box-shadow: 0 0 30px rgba(5, 217, 232, 0.2), inset 0 0 20px rgba(0, 0, 0, 0.2) !important;
 }
 
 /* SVG Lines */
@@ -211,15 +215,16 @@ header h1 {
     height: 100%;
     pointer-events: none;
     z-index: 1;
+    overflow: visible;
 }
 
 #board-lines polyline,
 #board-lines line {
     fill: none;
-    stroke: var(--board-line);
-    stroke-width: 4;
+    stroke: var(--line-color);
+    stroke-width: 2;
     stroke-linecap: round;
-    filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.3));
+    filter: none;
 }
 
 /* Nodes Area */
@@ -247,6 +252,7 @@ header h1 {
     pointer-events: auto;
     transition: all 0.2s ease;
     z-index: 2;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
 .node:hover {
@@ -273,7 +279,7 @@ header h1 {
     pointer-events: auto;
     cursor: grab;
     transition: box-shadow 0.2s, transform 0.1s;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.4);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
     z-index: 3;
     display: flex;
     justify-content: center;
@@ -298,16 +304,26 @@ header h1 {
 }
 
 .gallina-piece {
-    background: radial-gradient(circle at 30% 30%, #fff, #fca311);
-    border: 2px solid #d4a373;
+    background: linear-gradient(135deg, #e0fbfc, var(--gallina-color));
+    border: none;
+    color: #000;
 }
 
 .zorro-piece {
-    background: radial-gradient(circle at 30% 30%, #ff5e62, #9b0000);
-    border: 2px solid #5a0000;
+    background: linear-gradient(135deg, var(--zorro-color), #d00000);
+    border: none;
     width: 40px;
     height: 40px;
-    /* Zorros slightly larger */
+    color: #fff;
+}
+
+/* Active Turn Piece Highlight */
+.gallina-piece.turn-active {
+    animation: turn-pulse-gallina 2s infinite;
+}
+
+.zorro-piece.turn-active {
+    animation: turn-pulse-zorro 2s infinite;
 }
 
 /* Animations */
@@ -430,6 +446,30 @@ button:disabled {
     object-fit: cover;
 }
 
+#qr-code-container {
+    margin: 10px auto;
+    padding: 10px;
+    background: white;
+    border-radius: 10px;
+    width: fit-content;
+    display: none;
+    /* Oculto por defecto */
+    animation: unfoldQR 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transform-origin: top center;
+}
+
+@keyframes unfoldQR {
+    0% {
+        opacity: 0;
+        transform: scaleY(0) translateY(-20px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scaleY(1) translateY(0);
+    }
+}
+
 .game-version {
     text-align: center;
     font-size: 0.8rem;
@@ -448,18 +488,27 @@ button:disabled {
 
 /* Voice Chat Button */
 .voice-btn {
-    background: #343a40;
-    /* Default gray */
-    font-size: 0.9rem;
-    padding: 5px 15px;
-    box-shadow: none;
+    background: transparent;
+    border: 2px solid #39ff14;
+    color: #39ff14;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.5rem;
+    box-shadow: 0 0 10px rgba(57, 255, 20, 0.2);
+    transition: all 0.3s ease;
 }
 
 .voice-btn.active {
-    background: #39ff14;
-    /* Neon Green */
-    color: #000;
-    box-shadow: 0 0 10px #39ff14;
+    background: #ff0054;
+    border-color: #ff0054;
+    color: white;
+    box-shadow: 0 0 15px #ff0054;
+    transform: scale(1.1);
 }
 
 .voice-btn.muted {

@@ -13,6 +13,8 @@ const piecesContainer = document.getElementById('pieces-container');
 const btnRules = document.getElementById('btn-rules');
 const btnCloseRules = document.getElementById('btn-close-rules');
 const rulesModal = document.getElementById('rules-modal');
+const btnShareQr = document.getElementById('btn-share-qr');
+const qrContainer = document.getElementById('qr-code-container');
 const btnRestart = document.getElementById('btn-restart');
 const btnVoice = document.getElementById('btn-voice');
 const remoteAudio = document.getElementById('remote-audio');
@@ -24,6 +26,8 @@ const splashScreen = document.getElementById('splash-screen');
 // Menu Elements
 const mainMenu = document.getElementById('main-menu');
 const btnFindMatch = document.getElementById('btn-find-match');
+const btnVsPC = document.getElementById('btn-vs-pc');
+const difficultySelect = document.getElementById('difficulty-select');
 const btnCreatePrivate = document.getElementById('btn-create-private');
 const btnJoinPrivate = document.getElementById('btn-join-private');
 const roomCodeInput = document.getElementById('room-code-input');
@@ -39,6 +43,21 @@ const btnDismiss = document.getElementById('btn-dismiss');
 btnRules.addEventListener('click', () => rulesModal.classList.remove('hidden'));
 btnCloseRules.addEventListener('click', () => rulesModal.classList.add('hidden'));
 
+if (btnShareQr) {
+    btnShareQr.addEventListener('click', () => {
+        // Si está vacío, generamos el QR
+        if (qrContainer.innerHTML === '') {
+            new QRCode(qrContainer, {
+                text: "https://zorro-gallina.onrender.com/",
+                width: 150,
+                height: 150
+            });
+        }
+        // Alternar visibilidad
+        qrContainer.style.display = qrContainer.style.display === 'block' ? 'none' : 'block';
+    });
+}
+
 // Game Config
 const BOARD_SIZE = 7;
 const NODE_SPACING = 100; // SVG viewBox coordinates
@@ -53,6 +72,8 @@ let gameState = {
 let myRole = null;
 let selectedPiece = null;
 let roomId = null;
+let isSinglePlayer = false;
+let aiDifficulty = 'hard';
 
 // Voice Chat Variables
 let localStream;
@@ -64,6 +85,7 @@ const rtcConfig = {
 let audioContext;
 let analyser;
 let visualizerInterval;
+let sfxAudioContext = null; // Contexto de audio separado para efectos de sonido
 
 // PWA Install Prompt
 let deferredPrompt;
@@ -156,6 +178,11 @@ function renderPieces(movedPieceId = null) {
         pieceDiv.dataset.id = p.id;
         pieceDiv.textContent = p.type === 'gallina' ? '🐔' : '🦊';
 
+        // Resaltar las piezas del bando que tiene el turno
+        if (p.type === gameState.turn) {
+            pieceDiv.classList.add('turn-active');
+        }
+
         if (selectedPiece && selectedPiece.id === p.id) {
             pieceDiv.classList.add('selected');
         }
@@ -189,7 +216,7 @@ function isValidMoveBasic(startX, startY, endX, endY) {
 
 function onPieceClick(piece, e) {
     e.stopPropagation();
-    if (myRole !== gameState.turn) {
+    if (myRole !== gameState.turn && !isSinglePlayer) { // Permitir click si es single player y es mi turno (o turno de la IA si estamos debugeando, pero mejor restringir)
         showMessage('No es tu turno!', 'red');
         return;
     }
@@ -197,12 +224,18 @@ function onPieceClick(piece, e) {
         showMessage('Esa no es tu pieza!', 'red');
         return;
     }
+    // En Single Player, bloquear si es turno de la PC
+    if (isSinglePlayer && gameState.turn !== myRole) {
+        return;
+    }
+
     if (gameState.forcedId && gameState.forcedId !== piece.id) {
         showMessage('¡Debes continuar capturando con esta pieza!', 'red');
         return;
     }
 
     selectedPiece = piece;
+    playSound('select');
     renderPieces();
 }
 
@@ -211,7 +244,10 @@ function getPieceAt(x, y) {
 }
 
 function onNodeClick(x, y) {
-    if (!selectedPiece || myRole !== gameState.turn) return;
+    if (!selectedPiece) return;
+    // Validar turno (Multiplayer o SinglePlayer)
+    if (!isSinglePlayer && myRole !== gameState.turn) return;
+    if (isSinglePlayer && gameState.turn !== myRole) return;
 
     const startX = selectedPiece.x;
     const startY = selectedPiece.y;
@@ -260,6 +296,7 @@ function onNodeClick(x, y) {
     }
 
     if (isValid) {
+        playSound('move');
         // Calculate new state
         const newPieces = gameState.pieces.filter(p => p.id !== capturedPieceId);
         const movedPieceIndex = newPieces.findIndex(p => p.id === selectedPiece.id);
@@ -279,7 +316,11 @@ function onNodeClick(x, y) {
         }
 
         // Emit move
-        socket.emit('move', { pieces: newPieces, turn: nextTurn, forcedId: nextForcedId });
+        if (isSinglePlayer) {
+            // Movimiento local
+        } else {
+            socket.emit('move', { pieces: newPieces, turn: nextTurn, forcedId: nextForcedId });
+        }
 
         const movedId = selectedPiece.id;
         // Apply locally
@@ -298,6 +339,11 @@ function onNodeClick(x, y) {
         updateStatus();
         renderPieces(movedId);
         checkWinCondition();
+
+        // Turno de la IA
+        if (isSinglePlayer && gameState.turn !== 'finalizado' && gameState.turn !== myRole) {
+            setTimeout(makeAIMove, 1000);
+        }
     }
 }
 
@@ -387,28 +433,38 @@ function checkWinCondition() {
     // Zorros win if logic (e.g., deleted >= 12, so only 8 left)
     if (gallinas.length <= 8) {
         // Alert removed to prevent blocking UI and double alerts
-        socket.emit('gameOver', 'zorros');
+        handleGameOver('zorros');
         return;
     }
 
-    // Gallinas win if 9 gallinas are in the gallinero (top 3x3)
-    const inGallinero = gallinas.filter(g => g.x >= 2 && g.x <= 4 && g.y <= 2);
-    if (inGallinero.length >= 9) {
-        // Alert removed
-        socket.emit('gameOver', 'gallinas');
+    // Gallinas ganan si llenan el gallinero (9 piezas en total), incluso con zorros dentro
+    const piecesInGallinero = gameState.pieces.filter(p => p.x >= 2 && p.x <= 4 && p.y <= 2);
+    if (piecesInGallinero.length === 9) {
+        handleGameOver('gallinas');
         return;
     }
 
     // Zorros ganan si las Gallinas no tienen movimientos (Bloqueo)
     if (gameState.turn === 'gallina' && !canGallinasMove()) {
-        socket.emit('gameOver', 'zorros');
+        handleGameOver('zorros');
         return;
     }
 
     // Gallinas ganan si los Zorros no pueden moverse (Ahogo)
     if (gameState.turn === 'zorro' && !canZorroMove()) {
-        socket.emit('gameOver', 'gallinas');
+        handleGameOver('gallinas', '¡Zorro Atrapado!');
         return;
+    }
+}
+
+function handleGameOver(winner, customMsg = null) {
+    if (isSinglePlayer) {
+        msgP.textContent = customMsg ? `${customMsg} Ganaron: ${winner.toUpperCase()}` : `¡Partida finalizada! Ganaron: ${winner.toUpperCase()}`;
+        gameState.turn = 'finalizado';
+        updateStatus();
+        triggerConfetti();
+    } else {
+        socket.emit('gameOver', { winner, customMsg });
     }
 }
 
@@ -446,18 +502,37 @@ function updateStatus() {
 btnVoice.addEventListener('click', toggleVoice);
 
 btnRestart.addEventListener('click', () => {
-    showCustomConfirm('¿Seguro que quieres reiniciar la partida?', () => {
-        socket.emit('restartGame');
-    });
+    if (isSinglePlayer) {
+        startSinglePlayerGame(); // Reiniciar localmente
+    } else {
+        showCustomConfirm('¿Seguro que quieres reiniciar la partida?', () => {
+            socket.emit('restartGame');
+        });
+    }
 });
 
 async function toggleVoice() {
     if (isVoiceActive) {
-        // Mute/Unmute logic
-        const audioTrack = localStream.getAudioTracks()[0];
-        audioTrack.enabled = !audioTrack.enabled;
-        btnVoice.textContent = audioTrack.enabled ? '🎤 Voz Activa' : '🔇 Silenciado';
-        btnVoice.classList.toggle('muted', !audioTrack.enabled);
+        // Desconectar (Cortar llamada) y volver al estado original
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+            localStream = null;
+        }
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        if (visualizerInterval) {
+            cancelAnimationFrame(visualizerInterval);
+        }
+        if (audioContext) {
+            audioContext.suspend();
+        }
+        voiceVisualizer.classList.add('hidden');
+
+        isVoiceActive = false;
+        btnVoice.textContent = '🎤';
+        btnVoice.classList.remove('active', 'muted');
     } else {
         // Connect logic
         // Verificar si el navegador soporta getUserMedia (suele fallar si no hay HTTPS)
@@ -469,7 +544,7 @@ async function toggleVoice() {
         try {
             localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             isVoiceActive = true;
-            btnVoice.textContent = '🎤 Voz Activa';
+            btnVoice.textContent = '🎤';
             btnVoice.classList.add('active');
 
             // Notify server we are ready
@@ -636,6 +711,7 @@ socket.on('userCount', (count) => {
 // --- Menu Logic ---
 btnFindMatch.addEventListener('click', () => {
     socket.emit('findMatch');
+    isSinglePlayer = false;
     mainMenu.classList.add('hidden');
     msgP.textContent = 'Buscando oponente...';
 });
@@ -645,6 +721,7 @@ btnCreatePrivate.addEventListener('click', () => {
         showCustomAlert('No hay conexión con el servidor.');
         return;
     }
+    isSinglePlayer = false;
     socket.emit('createPrivateRoom');
     waitingPrivateDiv.classList.remove('hidden');
     // Ocultar botones para evitar múltiples clics
@@ -668,6 +745,7 @@ btnCreatePrivate.addEventListener('click', () => {
 btnJoinPrivate.addEventListener('click', () => {
     const code = roomCodeInput.value.trim().toUpperCase();
     if (code.length === 6) {
+        isSinglePlayer = false;
         socket.emit('joinPrivateRoom', code);
     } else {
         showCustomAlert('El código debe tener 6 caracteres.');
@@ -681,6 +759,216 @@ btnShareWhatsapp.addEventListener('click', () => {
         const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
         window.open(url, '_blank');
     }
+});
+
+// --- Single Player Logic (AI) ---
+btnVsPC.addEventListener('click', startSinglePlayerGame);
+
+function startSinglePlayerGame() {
+    isSinglePlayer = true;
+    mainMenu.classList.add('hidden');
+    aiDifficulty = difficultySelect.value;
+
+    // Asignar roles aleatorios o fijos. Vamos a poner al usuario como Gallina por defecto para empezar fácil.
+    // O aleatorio:
+    myRole = Math.random() < 0.5 ? 'gallina' : 'zorro';
+
+    gameState.turn = 'gallina';
+    gameState.forcedId = null;
+
+    msgP.textContent = `Modo VS PC. Eres: ${myRole.toUpperCase()}`;
+    msgP.style.color = '#4cc9f0';
+
+    setupInitialPieces();
+    updateStatus();
+    renderPieces();
+
+    // Si la PC es Gallina y empieza (Gallina siempre empieza), mover IA
+    if (myRole === 'zorro') {
+        setTimeout(makeAIMove, 1000);
+    }
+}
+
+function makeAIMove() {
+    if (gameState.turn === 'finalizado') return;
+
+    const aiRole = myRole === 'gallina' ? 'zorro' : 'gallina';
+
+    // Si hay captura múltiple obligatoria, solo usamos esa pieza
+    let aiPieces = gameState.pieces.filter(p => p.type === aiRole);
+    if (gameState.forcedId) {
+        aiPieces = aiPieces.filter(p => p.id === gameState.forcedId);
+    }
+
+    let possibleMoves = [];
+
+    // Calcular todos los movimientos posibles
+    aiPieces.forEach(piece => {
+        // Direcciones a probar
+        const dirs = [
+            [0, -1], [0, 1], [-1, 0], [1, 0],
+            [-1, -1], [1, -1], [-1, 1], [1, 1]
+        ];
+
+        dirs.forEach(([dx, dy]) => {
+            // Movimiento simple
+            const tx = piece.x + dx;
+            const ty = piece.y + dy;
+
+            // Reglas específicas de movimiento
+            let canMove = false;
+            if (aiRole === 'gallina') {
+                if (ty <= piece.y && isValidMoveBasic(piece.x, piece.y, tx, ty) && !getPieceAt(tx, ty)) {
+                    canMove = true;
+                }
+            } else { // Zorro
+                if (isValidMoveBasic(piece.x, piece.y, tx, ty) && !getPieceAt(tx, ty)) {
+                    canMove = true;
+                }
+            }
+
+            if (canMove) {
+                // Si estamos en racha de capturas, no permitimos movimientos simples
+                if (!gameState.forcedId) {
+                    possibleMoves.push({ piece, x: tx, y: ty, isCapture: false });
+                }
+            }
+
+            // Capturas (Solo Zorro)
+            if (aiRole === 'zorro') {
+                const jx = piece.x + dx * 2;
+                const jy = piece.y + dy * 2;
+
+                if (isValidMoveBasic(piece.x, piece.y, tx, ty) && isValidMoveBasic(tx, ty, jx, jy)) {
+                    const midPiece = getPieceAt(tx, ty);
+                    const endPiece = getPieceAt(jx, jy);
+                    if (midPiece && midPiece.type === 'gallina' && !endPiece) {
+                        possibleMoves.push({ piece, x: jx, y: jy, isCapture: true, capturedId: midPiece.id });
+                    }
+                }
+            }
+        });
+    });
+
+    if (possibleMoves.length === 0) {
+        // No hay movimientos, probablemente fin del juego detectado en checkWinCondition
+        return;
+    }
+
+    // IA Simple: Priorizar capturas, luego aleatorio
+    let selectedMove = null;
+    const captures = possibleMoves.filter(m => m.isCapture);
+
+    if (captures.length > 0) {
+        selectedMove = captures[Math.floor(Math.random() * captures.length)];
+    } else {
+        // Si es Fácil, movimiento aleatorio. Si es Difícil, usar heurística.
+        if (aiDifficulty === 'easy') {
+            selectedMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+        } else if (aiRole === 'gallina') {
+            // Heurística Avanzada para Gallinas: Llenar el gallinero
+            possibleMoves.forEach(m => {
+                m.score = 0;
+                // 1. Distancia al objetivo (Top Center: 3,0). Menor distancia = Mejor puntaje.
+                const dist = Math.abs(m.x - 3) + m.y;
+                m.score -= dist * 5;
+
+                // 2. Bonificación por estar dentro del área ganadora (x:2-4, y:0-2)
+                const inZone = (m.x >= 2 && m.x <= 4 && m.y <= 2);
+                if (inZone) m.score += 30;
+
+                // 3. Penalización fuerte por SALIR del área ganadora (¡No te salgas!)
+                const wasInZone = (m.piece.x >= 2 && m.piece.x <= 4 && m.piece.y <= 2);
+                if (wasInZone && !inZone) m.score -= 100;
+
+                // 4. Factor aleatorio pequeño para variedad
+                m.score += Math.random() * 3;
+            });
+            // Ordenar por mejor puntaje
+            possibleMoves.sort((a, b) => b.score - a.score);
+            selectedMove = possibleMoves[0];
+        } else {
+            // Zorro sin captura: Heurística defensiva (Movilidad + Centralidad)
+            possibleMoves.forEach(m => {
+                m.score = 0;
+
+                // 1. Movilidad: Calcular a cuántas casillas podría moverse desde la nueva posición
+                let mobility = 0;
+                const dirs = [
+                    [0, -1], [0, 1], [-1, 0], [1, 0],
+                    [-1, -1], [1, -1], [-1, 1], [1, 1]
+                ];
+
+                dirs.forEach(([dx, dy]) => {
+                    const nx = m.x + dx;
+                    const ny = m.y + dy;
+                    // Verificar si la línea existe en el tablero
+                    if (isValidMoveBasic(m.x, m.y, nx, ny)) {
+                        const p = getPieceAt(nx, ny);
+                        // Es válido si está vacío O si es la posición de donde venimos (que quedará vacía)
+                        if (!p || p.id === m.piece.id) {
+                            mobility++;
+                        }
+                    }
+                });
+                m.score += mobility * 10; // Prioridad alta a no quedarse encerrado
+
+                // 2. Centralidad: Preferir el centro del tablero (x=3, y=3 aprox)
+                const distCenter = Math.abs(m.x - 3) + Math.abs(m.y - 3);
+                m.score -= distCenter * 2;
+
+                // 3. Penalización crítica por estar a punto de ser bloqueado
+                if (mobility <= 1) m.score -= 50;
+
+                // 4. Factor aleatorio para variedad
+                m.score += Math.random() * 5;
+            });
+
+            // Ordenar por mejor puntaje
+            possibleMoves.sort((a, b) => b.score - a.score);
+            selectedMove = possibleMoves[0];
+        }
+    }
+
+    // Ejecutar movimiento
+    playSound('move');
+
+    let newPieces = gameState.pieces.filter(p => p.id !== (selectedMove.capturedId || null));
+    const movedPieceIndex = newPieces.findIndex(p => p.id === selectedMove.piece.id);
+    newPieces[movedPieceIndex].x = selectedMove.x;
+    newPieces[movedPieceIndex].y = selectedMove.y;
+
+    gameState.pieces = newPieces;
+
+    // Lógica de turno y captura múltiple para IA
+    let nextTurn = myRole; // Por defecto devuelve el turno al humano
+    let nextForcedId = null;
+
+    if (aiRole === 'zorro' && selectedMove.isCapture) {
+        // Verificar si puede seguir capturando desde la nueva posición
+        if (canZorroCaptureFrom(selectedMove.x, selectedMove.y)) {
+            nextTurn = aiRole; // La IA sigue jugando
+            nextForcedId = selectedMove.piece.id;
+            showMessage('¡La PC ataca de nuevo!', '#ff0054');
+        }
+    }
+
+    gameState.turn = nextTurn;
+    gameState.forcedId = nextForcedId;
+
+    updateStatus();
+    renderPieces(selectedMove.piece.id);
+    checkWinCondition();
+
+    // Si la IA sigue teniendo el turno, programar el siguiente movimiento
+    if (nextTurn === aiRole && gameState.turn !== 'finalizado') {
+        setTimeout(makeAIMove, 1000);
+    }
+}
+
+socket.on('gameStart', (data) => {
+    isSinglePlayer = false;
+    mainMenu.classList.add('hidden'); // Asegurar que el menú se oculte
 });
 
 // Socket Events
@@ -749,8 +1037,10 @@ socket.on('restartGame', () => {
     renderPieces();
 });
 
-socket.on('gameOver', (winner) => {
-    msgP.textContent = `¡Partida finalizada! Ganaron: ${winner.toUpperCase()}`;
+socket.on('gameOver', (data) => {
+    const winner = data.winner || data;
+    const customMsg = data.customMsg;
+    msgP.textContent = customMsg ? `${customMsg} Ganaron: ${winner.toUpperCase()}` : `¡Partida finalizada! Ganaron: ${winner.toUpperCase()}`;
     gameState.turn = 'finalizado'; // Stop further moves
     updateStatus();
     triggerConfetti();
@@ -872,6 +1162,43 @@ function triggerConfetti() {
             requestAnimationFrame(frame);
         }
     }());
+}
+
+// --- Sound Effects (Web Audio API) ---
+function playSound(type) {
+    if (!window.AudioContext && !window.webkitAudioContext) return;
+    if (!sfxAudioContext) {
+        sfxAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (sfxAudioContext.state === 'suspended') {
+        sfxAudioContext.resume().catch(() => { });
+    }
+
+    const osc = sfxAudioContext.createOscillator();
+    const gainNode = sfxAudioContext.createGain();
+
+    osc.connect(gainNode);
+    gainNode.connect(sfxAudioContext.destination);
+
+    const now = sfxAudioContext.currentTime;
+
+    if (type === 'select') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(1760, now + 0.05);
+        gainNode.gain.setValueAtTime(0.05, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+        osc.start(now);
+        osc.stop(now + 0.05);
+    } else if (type === 'move') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.exponentialRampToValueAtTime(110, now + 0.15);
+        gainNode.gain.setValueAtTime(0.05, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+    }
 }
 
 // Start
