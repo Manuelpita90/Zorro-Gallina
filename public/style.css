@@ -1,0 +1,917 @@
+:root {
+    --bg-main: #141629;
+    --board-bg-gradient: linear-gradient(135deg, #d3a360, #9f6630);
+    --text-color: #f8f9fa;
+    --board-line: #6c2b2b;
+    --zorro-color: #e63946;
+    --gallina-color: #f1faee;
+    --node-bg: rgba(255, 255, 255, 0.2);
+    --node-border: #6c2b2b;
+    --active-shadow: 0 0 15px 4px #4cc9f0;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-main);
+    color: var(--text-color);
+    font-family: 'Outfit', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow-y: auto;
+    /* Permitir scroll si la pantalla es muy pequeña */
+    touch-action: manipulation;
+    /* Mejora la respuesta táctil y evita zoom doble tap */
+}
+
+#game-container {
+    max-width: 800px;
+    width: 100%;
+    text-align: center;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+#system-info {
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+    color: #aaa;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    align-items: center;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.status-online {
+    color: #39ff14;
+    text-shadow: 0 0 8px rgba(57, 255, 20, 0.6);
+}
+
+.status-offline {
+    color: #ff0054;
+    text-shadow: 0 0 8px rgba(255, 0, 84, 0.6);
+}
+
+header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+    background: linear-gradient(90deg, #ff9e00, #ff0054);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0px 4px 20px rgba(255, 0, 84, 0.4);
+}
+
+#status-bar {
+    display: flex;
+    justify-content: space-around;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 10px 20px;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 15px;
+    font-size: 1.2rem;
+    gap: 15px;
+    align-items: center;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.capturas-badges {
+    display: flex;
+    gap: 5px;
+}
+
+.voice-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.badge {
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.badge.bg-secondary {
+    background: #343a40;
+    color: #fff;
+}
+
+.badge.gallina-badge {
+    background: var(--gallina-color);
+    color: #000;
+}
+
+.badge.zorro-badge {
+    background: var(--zorro-color);
+    color: #fff;
+}
+
+/* Turn Indicator Active Glow */
+#current-turn.gallina-badge {
+    box-shadow: 0 0 5px var(--gallina-color);
+    animation: turn-pulse-gallina 1.5s infinite;
+}
+
+#current-turn.zorro-badge {
+    box-shadow: 0 0 5px var(--zorro-color);
+    animation: turn-pulse-zorro 1.5s infinite;
+}
+
+@keyframes turn-pulse-gallina {
+    0% {
+        box-shadow: 0 0 5px var(--gallina-color);
+    }
+
+    50% {
+        box-shadow: 0 0 20px var(--gallina-color), 0 0 8px #ffffff;
+    }
+
+    100% {
+        box-shadow: 0 0 5px var(--gallina-color);
+    }
+}
+
+@keyframes turn-pulse-zorro {
+    0% {
+        box-shadow: 0 0 5px var(--zorro-color);
+    }
+
+    50% {
+        box-shadow: 0 0 20px var(--zorro-color), 0 0 8px #ff9e00;
+    }
+
+    100% {
+        box-shadow: 0 0 5px var(--zorro-color);
+    }
+}
+
+#game-message {
+    min-height: 24px;
+    font-size: 1.1rem;
+    color: #4cc9f0;
+    font-weight: 600;
+}
+
+/* Board Styling */
+#board-container {
+    position: relative;
+    width: 100%;
+    max-width: 500px;
+    aspect-ratio: 1;
+    /* Square */
+    background: var(--board-bg-gradient);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.3);
+    border: 12px solid #5a3a22;
+    /* Wooden frame looking */
+    user-select: none;
+    /* Evita seleccionar texto al tocar rápido */
+    -webkit-user-select: none;
+    transition: border-color 0.5s ease, box-shadow 0.5s ease, background 0.5s ease;
+}
+
+.board-turn-zorro {
+    background: linear-gradient(135deg, #d3a360, #7a2e2e) !important;
+    border-color: #8a3324 !important;
+    box-shadow: 0 0 25px rgba(230, 57, 70, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.3) !important;
+}
+
+.board-turn-gallina {
+    background: linear-gradient(135deg, #e6c288, #9f6630) !important;
+    border-color: #d4a373 !important;
+    box-shadow: 0 0 25px rgba(241, 250, 238, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* SVG Lines */
+#board-lines {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+#board-lines polyline,
+#board-lines line {
+    fill: none;
+    stroke: var(--board-line);
+    stroke-width: 4;
+    stroke-linecap: round;
+    filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+/* Nodes Area */
+#nodes-container,
+#pieces-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+    /* Let clicks pass unless on piece/node */
+}
+
+.node {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--node-bg);
+    border: 2px solid var(--node-border);
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    pointer-events: auto;
+    transition: all 0.2s ease;
+    z-index: 2;
+}
+
+.node:hover {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.node.highlight {
+    background: rgba(76, 201, 240, 0.6);
+    box-shadow: 0 0 10px #4cc9f0;
+    border-color: #4cc9f0;
+}
+
+/* Pieces */
+#pieces-container {
+    z-index: 3;
+}
+
+.piece {
+    position: absolute;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+    cursor: grab;
+    transition: box-shadow 0.2s, transform 0.1s;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.4);
+    z-index: 3;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 22px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.piece:active {
+    cursor: grabbing;
+    transform: translate(-50%, -50%) scale(0.9);
+}
+
+.piece.selected {
+    box-shadow: var(--active-shadow);
+    z-index: 4;
+    animation: pulse-selection 2s infinite;
+}
+
+.piece.bounce {
+    animation: bounce 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.gallina-piece {
+    background: radial-gradient(circle at 30% 30%, #fff, #fca311);
+    border: 2px solid #d4a373;
+}
+
+.zorro-piece {
+    background: radial-gradient(circle at 30% 30%, #ff5e62, #9b0000);
+    border: 2px solid #5a0000;
+    width: 40px;
+    height: 40px;
+    /* Zorros slightly larger */
+}
+
+/* Animations */
+@keyframes pulse-selection {
+    0% {
+        box-shadow: 0 0 0 0 rgba(76, 201, 240, 0.7);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(76, 201, 240, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(76, 201, 240, 0);
+    }
+}
+
+@keyframes bounce {
+    0% {
+        transform: translate(-50%, -50%) scale(1.4);
+    }
+
+    50% {
+        transform: translate(-50%, -50%) scale(0.9);
+    }
+
+    100% {
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+/* UI Elements */
+.hidden {
+    display: none !important;
+}
+
+button {
+    background: linear-gradient(45deg, #39ff14, #32cd32);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: filter 0.2s, transform 0.1s;
+    font-family: inherit;
+    box-shadow: 0 4px 15px rgba(57, 255, 20, 0.4);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    /* Para mejorar legibilidad sobre verde brillante */
+}
+
+button:hover {
+    filter: brightness(0.8);
+    /* Oscurece el botón al pasar el mouse */
+}
+
+button:active {
+    transform: scale(0.95);
+}
+
+button:disabled {
+    background: #555;
+    cursor: not-allowed;
+    filter: grayscale(100%);
+    transform: none;
+    box-shadow: none;
+    color: #aaa;
+}
+
+/* Rules Modal */
+#rules-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+.modal-content {
+    background: #1d2138;
+    padding: 30px;
+    border-radius: 16px;
+    max-width: 500px;
+    text-align: left;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-content h2 {
+    color: #fca311;
+    margin-bottom: 15px;
+}
+
+.modal-content p {
+    margin-bottom: 10px;
+    line-height: 1.5;
+    color: #ccc;
+}
+
+.modal-content button {
+    margin-top: 20px;
+    width: 100%;
+}
+
+.rules-icon {
+    display: block;
+    width: 100px;
+    height: 100px;
+    margin: 0 auto 20px auto;
+    border-radius: 50%;
+    border: 3px solid #39ff14;
+    /* Verde Neón */
+    box-shadow: 0 0 15px #39ff14;
+    object-fit: cover;
+}
+
+.game-version {
+    text-align: center;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 10px;
+}
+
+.dev-credit {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #4cc9f0;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+/* Voice Chat Button */
+.voice-btn {
+    background: #343a40;
+    /* Default gray */
+    font-size: 0.9rem;
+    padding: 5px 15px;
+    box-shadow: none;
+}
+
+.voice-btn.active {
+    background: #39ff14;
+    /* Neon Green */
+    color: #000;
+    box-shadow: 0 0 10px #39ff14;
+}
+
+.voice-btn.muted {
+    background: #ff0054;
+    /* Red */
+    color: #fff;
+}
+
+.btn-whatsapp {
+    background: #25D366;
+    margin-top: 10px;
+    width: 100%;
+}
+
+.btn-whatsapp:hover {
+    background: #128C7E;
+}
+
+.footer-buttons {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+}
+
+/* Audio Visualizer */
+.visualizer {
+    display: flex;
+    align-items: flex-end;
+    height: 24px;
+    gap: 3px;
+}
+
+.visualizer .bar {
+    width: 5px;
+    background-color: #39ff14;
+    height: 3px;
+    border-radius: 2px;
+    transition: height 0.05s ease;
+}
+
+/* --- PWA Install Banner --- */
+.install-banner {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 400px;
+    background: rgba(29, 33, 56, 0.95);
+    border: 1px solid #4cc9f0;
+    border-radius: 12px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+    z-index: 200;
+    backdrop-filter: blur(10px);
+    animation: slideUpBanner 0.5s ease-out;
+}
+
+.install-content {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.install-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 10px;
+    border: 2px solid #39ff14;
+}
+
+.install-text h3 {
+    color: #fca311;
+    margin-bottom: 4px;
+    font-size: 1.1rem;
+}
+
+.install-text p {
+    font-size: 0.9rem;
+    color: #ccc;
+}
+
+.install-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.btn-secondary {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: none;
+}
+
+@keyframes slideUpBanner {
+    from {
+        transform: translate(-50%, 100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
+}
+
+/* --- Custom Message Box --- */
+#custom-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 2100;
+    /* Mayor que splash-screen (1000) para que se vea la alerta */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.msg-box-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    justify-content: flex-end;
+}
+
+/* --- Splash Screen --- */
+#splash-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: var(--bg-main);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    transition: opacity 0.5s ease-out, visibility 0.5s;
+}
+
+#splash-screen.fade-out {
+    opacity: 0;
+    visibility: hidden;
+}
+
+.splash-content {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.splash-logo {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    border: 4px solid #39ff14;
+    box-shadow: 0 0 30px rgba(57, 255, 20, 0.3);
+    animation: pulse-logo 2s infinite;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-left-color: #4cc9f0;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse-logo {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 30px rgba(57, 255, 20, 0.3);
+    }
+
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 50px rgba(57, 255, 20, 0.6);
+    }
+
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 30px rgba(57, 255, 20, 0.3);
+    }
+}
+
+.typing-effect {
+    display: inline-block;
+    overflow: hidden;
+    white-space: nowrap;
+    border-right: 3px solid #4cc9f0;
+    /* Cursor color */
+    width: 35ch;
+    /* Ancho aproximado del texto */
+    animation: typing 2.5s steps(30, end), blink-caret 0.75s step-end infinite;
+    text-align: left;
+}
+
+@keyframes typing {
+    from {
+        width: 0;
+    }
+}
+
+@keyframes blink-caret {
+    50% {
+        border-color: transparent;
+    }
+}
+
+/* --- Main Menu --- */
+#main-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-main);
+    z-index: 900;
+    /* Debajo del splash (1000) pero encima de todo lo demás */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.menu-content {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 30px;
+    border-radius: 20px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    width: 90%;
+    max-width: 350px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.menu-logo {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto;
+    border-radius: 50%;
+    border: 2px solid #39ff14;
+}
+
+.divider {
+    display: flex;
+    align-items: center;
+    color: #888;
+    font-size: 0.8rem;
+    margin: 5px 0;
+}
+
+.divider::before,
+.divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.divider span {
+    padding: 0 10px;
+}
+
+.join-private-container {
+    display: flex;
+    gap: 10px;
+    flex-direction: column;
+}
+
+#room-code-input {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.2);
+    color: white;
+    text-transform: uppercase;
+    text-align: center;
+    font-weight: bold;
+    font-size: 1rem;
+}
+
+.code-display {
+    font-size: 1.8rem;
+    color: #39ff14;
+    font-weight: bold;
+    margin: 10px 0;
+    letter-spacing: 3px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px dashed #39ff14;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.small-text {
+    font-size: 0.8rem;
+    color: #aaa;
+}
+
+/* --- Adaptación para Móviles (Responsive) --- */
+@media (max-width: 600px) {
+    #game-container {
+        padding: 10px;
+        justify-content: flex-start;
+    }
+
+    header h1 {
+        font-size: 1.8rem;
+        margin-bottom: 5px;
+    }
+
+    #status-bar {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 10px;
+        justify-items: center;
+    }
+
+    .status-item {
+        flex-direction: column;
+        width: 100%;
+        text-align: center;
+        gap: 4px;
+    }
+
+    .status-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        opacity: 0.8;
+    }
+
+    /* Hacer que 'Capturas' ocupe todo el ancho ahora que 'Voz' salió del flujo */
+    .status-item:nth-child(3) {
+        grid-column: span 2;
+    }
+
+    #board-container {
+        width: 94vw;
+        /* Usar casi todo el ancho de la pantalla */
+        max-width: 94vw;
+        border-width: 6px;
+        /* Borde más fino */
+    }
+
+    /* Piezas responsivas: Usar % en lugar de px fijos */
+    .piece {
+        width: 12%;
+        /* 12% del ancho del tablero */
+        height: 12%;
+        font-size: 6vw;
+    }
+
+    .zorro-piece {
+        width: 13%;
+        height: 13%;
+    }
+
+    /* Nodos: Visualmente pequeños, pero área de toque grande */
+    .node {
+        width: 14px;
+        height: 14px;
+    }
+
+    /* Truco: Expandir el área de click invisiblemente alrededor del nodo */
+    .node::after {
+        content: '';
+        position: absolute;
+        top: -15px;
+        left: -15px;
+        right: -15px;
+        bottom: -15px;
+    }
+
+    .modal-content {
+        width: 90%;
+        max-height: 85vh;
+        overflow-y: auto;
+    }
+}
+
+/* --- Adaptación para Landscape (Horizontal) --- */
+@media (max-height: 600px) and (orientation: landscape) {
+    #game-container {
+        flex-direction: row;
+        justify-content: center;
+        align-items: center;
+        gap: 20px;
+        padding: 5px;
+        height: 100vh;
+    }
+
+    header {
+        width: 30%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    header h1 {
+        font-size: 1.4rem;
+    }
+
+    #status-bar {
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    #board-container {
+        height: 90vh;
+        width: 90vh;
+        /* Forzar cuadrado basado en altura */
+        max-width: none;
+        /* Quitar límite de ancho */
+    }
+
+    .piece {
+        width: 10%;
+        height: 10%;
+        font-size: 5vh;
+    }
+
+    .zorro-piece {
+        width: 11%;
+        height: 11%;
+    }
+
+    footer {
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+    }
+}

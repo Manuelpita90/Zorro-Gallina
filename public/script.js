@@ -1,0 +1,793 @@
+const socket = io();
+
+// UI Elements
+const roleSpan = document.getElementById('player-role');
+const turnSpan = document.getElementById('current-turn');
+const scoreGallinasSpan = document.getElementById('score-gallinas');
+const scoreZorrosSpan = document.getElementById('score-zorros');
+const msgP = document.getElementById('game-message');
+const boardLines = document.getElementById('board-lines');
+const nodesContainer = document.getElementById('nodes-container');
+const boardContainer = document.getElementById('board-container');
+const piecesContainer = document.getElementById('pieces-container');
+const btnRules = document.getElementById('btn-rules');
+const btnCloseRules = document.getElementById('btn-close-rules');
+const rulesModal = document.getElementById('rules-modal');
+const btnRestart = document.getElementById('btn-restart');
+const btnVoice = document.getElementById('btn-voice');
+const remoteAudio = document.getElementById('remote-audio');
+const voiceVisualizer = document.getElementById('voice-visualizer');
+const connectionStatusSpan = document.getElementById('connection-status');
+const userCountSpan = document.getElementById('user-count');
+const splashScreen = document.getElementById('splash-screen');
+
+// Menu Elements
+const mainMenu = document.getElementById('main-menu');
+const btnFindMatch = document.getElementById('btn-find-match');
+const btnCreatePrivate = document.getElementById('btn-create-private');
+const btnJoinPrivate = document.getElementById('btn-join-private');
+const roomCodeInput = document.getElementById('room-code-input');
+const waitingPrivateDiv = document.getElementById('waiting-private');
+const displayCodeSpan = document.getElementById('display-code');
+const btnShareWhatsapp = document.getElementById('btn-share-whatsapp');
+
+// PWA Elements
+const installBanner = document.getElementById('install-banner');
+const btnInstall = document.getElementById('btn-install');
+const btnDismiss = document.getElementById('btn-dismiss');
+
+btnRules.addEventListener('click', () => rulesModal.classList.remove('hidden'));
+btnCloseRules.addEventListener('click', () => rulesModal.classList.add('hidden'));
+
+// Game Config
+const BOARD_SIZE = 7;
+const NODE_SPACING = 100; // SVG viewBox coordinates
+const INITIAL_GALLINAS = 20;
+const INITIAL_ZORROS = 2;
+let validNodes = new Set();
+let gameState = {
+    pieces: [], // { id, type: 'gallina'|'zorro', x, y }
+    turn: 'gallina'
+};
+let myRole = null;
+let selectedPiece = null;
+let roomId = null;
+
+// Voice Chat Variables
+let localStream;
+let peerConnection;
+let isVoiceActive = false;
+const rtcConfig = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] // Servidor STUN público de Google
+};
+let audioContext;
+let analyser;
+let visualizerInterval;
+
+// PWA Install Prompt
+let deferredPrompt;
+let roomCreationTimeout; // Variable para el temporizador
+
+// Initialize Board
+function initBoard() {
+    boardLines.innerHTML = '';
+    nodesContainer.innerHTML = '';
+    piecesContainer.innerHTML = '';
+    validNodes.clear();
+
+    const svgNs = "http://www.w3.org/2000/svg";
+
+    // Define valid nodes (33 points)
+    for (let y = 0; y < BOARD_SIZE; y++) {
+        for (let x = 0; x < BOARD_SIZE; x++) {
+            // Remove corners
+            if ((x < 2 || x > 4) && (y < 2 || y > 4)) continue;
+            validNodes.add(`${x},${y}`);
+        }
+    }
+
+    // Draw lines
+    const linesToDraw = [];
+    validNodes.forEach(pos => {
+        const [x, y] = pos.split(',').map(Number);
+        const hasDiagonals = (x + y) % 2 === 0;
+
+        const neighbors = [
+            [x + 1, y], [x, y + 1] // only look right and down to avoid duplicates
+        ];
+
+        if (hasDiagonals) {
+            neighbors.push([x + 1, y + 1], [x - 1, y + 1]);
+        }
+
+        neighbors.forEach(([nx, ny]) => {
+            if (validNodes.has(`${nx},${ny}`)) {
+                const line = document.createElementNS(svgNs, 'line');
+                line.setAttribute('x1', x * NODE_SPACING);
+                line.setAttribute('y1', y * NODE_SPACING);
+                line.setAttribute('x2', nx * NODE_SPACING);
+                line.setAttribute('y2', ny * NODE_SPACING);
+                boardLines.appendChild(line);
+            }
+        });
+
+        // Draw node elements
+        const nodeDiv = document.createElement('div');
+        nodeDiv.className = 'node';
+        nodeDiv.style.left = `${(x / (BOARD_SIZE - 1)) * 100}%`;
+        nodeDiv.style.top = `${(y / (BOARD_SIZE - 1)) * 100}%`;
+        nodeDiv.dataset.x = x;
+        nodeDiv.dataset.y = y;
+
+        nodeDiv.addEventListener('click', () => onNodeClick(x, y));
+
+        nodesContainer.appendChild(nodeDiv);
+    });
+
+    setupInitialPieces();
+    renderPieces();
+}
+
+function setupInitialPieces() {
+    gameState.pieces = [];
+    let pieceId = 0;
+
+    // 20 Gallinas
+    validNodes.forEach(pos => {
+        const [x, y] = pos.split(',').map(Number);
+        if (y >= 3) {
+            gameState.pieces.push({ id: `g${pieceId++}`, type: 'gallina', x, y });
+        }
+    });
+
+    // 2 Zorros
+    gameState.pieces.push({ id: 'z1', type: 'zorro', x: 2, y: 2 });
+    gameState.pieces.push({ id: 'z2', type: 'zorro', x: 4, y: 2 });
+}
+
+function renderPieces(movedPieceId = null) {
+    piecesContainer.innerHTML = '';
+    gameState.pieces.forEach(p => {
+        const pieceDiv = document.createElement('div');
+        pieceDiv.className = `piece ${p.type}-piece`;
+        pieceDiv.style.left = `${(p.x / (BOARD_SIZE - 1)) * 100}%`;
+        pieceDiv.style.top = `${(p.y / (BOARD_SIZE - 1)) * 100}%`;
+        pieceDiv.dataset.id = p.id;
+        pieceDiv.textContent = p.type === 'gallina' ? '🐔' : '🦊';
+
+        if (selectedPiece && selectedPiece.id === p.id) {
+            pieceDiv.classList.add('selected');
+        }
+
+        if (p.id === movedPieceId) {
+            pieceDiv.classList.add('bounce');
+        }
+
+        pieceDiv.addEventListener('click', (e) => onPieceClick(p, e));
+        piecesContainer.appendChild(pieceDiv);
+    });
+}
+
+// Logic Rules
+function isValidMoveBasic(startX, startY, endX, endY) {
+    if (!validNodes.has(`${endX},${endY}`)) return false;
+
+    const dx = Math.abs(endX - startX);
+    const dy = Math.abs(endY - startY);
+
+    if (dx === 0 && dy === 0) return false;
+
+    const hasDiagonals = (startX + startY) % 2 === 0;
+
+    if (dx <= 1 && dy <= 1) {
+        if (!hasDiagonals && dx === 1 && dy === 1) return false; // Not allowed to move diagonally if no lines
+        return true;
+    }
+    return false;
+}
+
+function onPieceClick(piece, e) {
+    e.stopPropagation();
+    if (myRole !== gameState.turn) {
+        showMessage('No es tu turno!', 'red');
+        return;
+    }
+    if (piece.type !== myRole) {
+        showMessage('Esa no es tu pieza!', 'red');
+        return;
+    }
+
+    selectedPiece = piece;
+    renderPieces();
+}
+
+function getPieceAt(x, y) {
+    return gameState.pieces.find(p => p.x === x && p.y === y);
+}
+
+function onNodeClick(x, y) {
+    if (!selectedPiece || myRole !== gameState.turn) return;
+
+    const startX = selectedPiece.x;
+    const startY = selectedPiece.y;
+
+    let isCapture = false;
+    let capturedPieceId = null;
+    let isValid = false;
+
+    // Check if space is occupied
+    if (getPieceAt(x, y)) return;
+
+    if (myRole === 'gallina') {
+        // Gallinas move 1 step. NO backward movement (y cannot increase if going towards y=0)
+        // Wait, typical rules say they move forward, sideways, but not backward.
+        if (y > startY) return; // Cannot move backward
+
+        if (isValidMoveBasic(startX, startY, x, y)) {
+            isValid = true;
+        }
+    } else if (myRole === 'zorro') {
+        // Move 1 step
+        if (isValidMoveBasic(startX, startY, x, y)) {
+            isValid = true;
+        } else {
+            // Check capture (jump over)
+            const dx = x - startX;
+            const dy = y - startY;
+
+            // Needs to be exactly 2 steps horizontally, vertically or diagonally
+            if ((Math.abs(dx) === 2 && dy === 0) || (Math.abs(dy) === 2 && dx === 0) || (Math.abs(dx) === 2 && Math.abs(dy) === 2)) {
+                const midX = startX + dx / 2;
+                const midY = startY + dy / 2;
+
+                // Needs grid line logic for the jump
+                // FIX: Check both segments of the jump (Start->Mid AND Mid->End)
+                if (isValidMoveBasic(startX, startY, midX, midY) && isValidMoveBasic(midX, midY, x, y)) {
+                    const midPiece = getPieceAt(midX, midY);
+                    if (midPiece && midPiece.type === 'gallina') {
+                        isValid = true;
+                        isCapture = true;
+                        capturedPieceId = midPiece.id;
+                    }
+                }
+            }
+        }
+    }
+
+    if (isValid) {
+        // Calculate new state
+        const newPieces = gameState.pieces.filter(p => p.id !== capturedPieceId);
+        const movedPieceIndex = newPieces.findIndex(p => p.id === selectedPiece.id);
+        newPieces[movedPieceIndex].x = x;
+        newPieces[movedPieceIndex].y = y;
+
+        const nextTurn = gameState.turn === 'gallina' ? 'zorro' : 'gallina';
+
+        // Emit move
+        socket.emit('move', { pieces: newPieces, turn: nextTurn });
+
+        const movedId = selectedPiece.id;
+        // Apply locally
+        gameState.pieces = newPieces;
+        gameState.turn = nextTurn;
+        selectedPiece = null;
+        updateStatus();
+        renderPieces(movedId);
+        checkWinCondition();
+    }
+}
+
+function canZorroMove() {
+    const zorros = gameState.pieces.filter(p => p.type === 'zorro');
+    // Direcciones posibles (ortogonales y diagonales)
+    const dirs = [
+        [0, -1], [0, 1], [-1, 0], [1, 0], // Ortogonales
+        [-1, -1], [1, -1], [-1, 1], [1, 1] // Diagonales
+    ];
+
+    for (const zorro of zorros) {
+        for (const [dx, dy] of dirs) {
+            const tx = zorro.x + dx;
+            const ty = zorro.y + dy;
+
+            // 1. Verificar movimiento simple
+            if (isValidMoveBasic(zorro.x, zorro.y, tx, ty)) {
+                if (!getPieceAt(tx, ty)) return true; // Puede moverse a espacio vacío
+            }
+
+            // 2. Verificar salto (captura)
+            const jx = zorro.x + dx * 2;
+            const jy = zorro.y + dy * 2;
+
+            if (isValidMoveBasic(zorro.x, zorro.y, tx, ty) && isValidMoveBasic(tx, ty, jx, jy)) {
+                const midPiece = getPieceAt(tx, ty);
+                const endPiece = getPieceAt(jx, jy);
+                if (midPiece && midPiece.type === 'gallina' && !endPiece) return true; // Puede saltar
+            }
+        }
+    }
+    return false; // Ningún zorro puede moverse
+}
+
+function checkWinCondition() {
+    const gallinas = gameState.pieces.filter(p => p.type === 'gallina');
+    const zorros = gameState.pieces.filter(p => p.type === 'zorro');
+
+    // Zorros win if logic (e.g., deleted >= 12, so only 8 left)
+    if (gallinas.length <= 8) {
+        // Alert removed to prevent blocking UI and double alerts
+        socket.emit('gameOver', 'zorros');
+        return;
+    }
+
+    // Gallinas win if 9 gallinas are in the gallinero (top 3x3)
+    const inGallinero = gallinas.filter(g => g.x >= 2 && g.x <= 4 && g.y <= 2);
+    if (inGallinero.length >= 9) {
+        // Alert removed
+        socket.emit('gameOver', 'gallinas');
+        return;
+    }
+
+    // Gallinas ganan si los Zorros no pueden moverse (Ahogo/Stalemate)
+    // Solo verificamos esto si es el turno del Zorro (o acaba de terminar el turno de Gallina)
+    if (!canZorroMove()) {
+        socket.emit('gameOver', 'gallinas');
+        return;
+    }
+}
+
+function showMessage(msg, color = 'white') {
+    msgP.textContent = msg;
+    msgP.style.color = color;
+    setTimeout(() => { if (msgP.textContent === msg) msgP.textContent = ''; }, 3000);
+}
+
+function updateStatus() {
+    roleSpan.textContent = myRole ? myRole.toUpperCase() : 'Esperando...';
+    roleSpan.className = `badge ${myRole ? myRole + '-badge' : 'bg-secondary'}`;
+
+    turnSpan.textContent = gameState.turn.toUpperCase();
+    turnSpan.className = `badge ${gameState.turn + '-badge'}`;
+
+    // Calcular capturas/bajas
+    const currentGallinas = gameState.pieces.filter(p => p.type === 'gallina').length;
+    const currentZorros = gameState.pieces.filter(p => p.type === 'zorro').length;
+
+    // Mostrar cuántas han sido eliminadas (Iniciales - Actuales)
+    scoreGallinasSpan.textContent = `🐔 -${INITIAL_GALLINAS - currentGallinas}`;
+    scoreZorrosSpan.textContent = `🦊 -${INITIAL_ZORROS - currentZorros}`;
+
+    // Actualizar estilo del tablero según el turno
+    boardContainer.classList.remove('board-turn-zorro', 'board-turn-gallina');
+    if (gameState.turn === 'zorro') {
+        boardContainer.classList.add('board-turn-zorro');
+    } else if (gameState.turn === 'gallina') {
+        boardContainer.classList.add('board-turn-gallina');
+    }
+}
+
+// --- Voice Chat Logic ---
+btnVoice.addEventListener('click', toggleVoice);
+
+btnRestart.addEventListener('click', () => {
+    showCustomConfirm('¿Seguro que quieres reiniciar la partida?', () => {
+        socket.emit('restartGame');
+    });
+});
+
+async function toggleVoice() {
+    if (isVoiceActive) {
+        // Mute/Unmute logic
+        const audioTrack = localStream.getAudioTracks()[0];
+        audioTrack.enabled = !audioTrack.enabled;
+        btnVoice.textContent = audioTrack.enabled ? '🎤 Voz Activa' : '🔇 Silenciado';
+        btnVoice.classList.toggle('muted', !audioTrack.enabled);
+    } else {
+        // Connect logic
+        // Verificar si el navegador soporta getUserMedia (suele fallar si no hay HTTPS)
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showCustomAlert('Error: El navegador ha bloqueado el micrófono. Esto suele pasar si no usas HTTPS. Si estás probando en red local, necesitas configurar el navegador o usar un túnel seguro.');
+            return;
+        }
+
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            isVoiceActive = true;
+            btnVoice.textContent = '🎤 Voz Activa';
+            btnVoice.classList.add('active');
+
+            // Notify server we are ready
+            socket.emit('voice-ready');
+
+            // Initialize AudioContext on user gesture
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        } catch (err) {
+            console.error('Error accessing microphone:', err);
+            showCustomAlert('No se pudo acceder al micrófono. Asegúrate de dar permisos.');
+        }
+    }
+}
+
+function createPeerConnection() {
+    peerConnection = new RTCPeerConnection(rtcConfig);
+
+    // Send ICE candidates to the other peer
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('voice-candidate', event.candidate);
+        }
+    };
+
+    // Play remote audio stream
+    peerConnection.ontrack = (event) => {
+        remoteAudio.srcObject = event.streams[0];
+        startVisualizer(event.streams[0]);
+    };
+
+    // Add local stream tracks to connection
+    localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+    });
+}
+
+function startVisualizer(stream) {
+    voiceVisualizer.classList.remove('hidden');
+
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+
+    const source = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 32; // Pequeño tamaño para pocas barras
+    source.connect(analyser);
+
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    const bars = voiceVisualizer.querySelectorAll('.bar');
+
+    function draw() {
+        visualizerInterval = requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(dataArray);
+
+        // Actualizar altura de las barras (tenemos 4 barras)
+        for (let i = 0; i < bars.length; i++) {
+            // Tomamos muestras espaciadas
+            const value = dataArray[i * 2];
+            const height = Math.max(3, (value / 255) * 24); // Altura máxima 24px
+            bars[i].style.height = `${height}px`;
+        }
+    }
+    draw();
+}
+
+socket.on('create-offer', async () => {
+    createPeerConnection();
+    try {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('voice-offer', offer);
+    } catch (err) {
+        console.error('Error creating offer:', err);
+    }
+});
+
+socket.on('voice-offer', async (offer) => {
+    if (!isVoiceActive) return;
+    createPeerConnection();
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('voice-answer', answer);
+});
+
+socket.on('voice-answer', async (answer) => {
+    if (peerConnection) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    }
+});
+
+socket.on('voice-candidate', async (candidate) => {
+    if (peerConnection) {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+});
+
+socket.on('connect', () => {
+    connectionStatusSpan.textContent = 'ONLINE';
+    connectionStatusSpan.className = 'status-online';
+    connectionStatusSpan.style.opacity = '1';
+    socket.emit('requestUserCount');
+
+    const p = splashScreen.querySelector('p');
+    if (p) {
+        p.textContent = 'Conectado al servidor';
+        // Reiniciar animación de escritura
+        p.classList.remove('typing-effect');
+        void p.offsetWidth; // Forzar reflow
+        p.classList.add('typing-effect');
+    }
+
+    // Ocultar splash screen cuando se conecta
+    setTimeout(() => {
+        splashScreen.classList.add('fade-out');
+    }, 1000); // Pequeño delay para que se vea el logo
+
+    // Si estábamos en partida, resetear porque el servidor limpia la sala al desconectar
+    if (myRole) {
+        myRole = null;
+        roomId = null;
+        gameState.pieces = [];
+        updateStatus();
+        initBoard(); // Limpiar tablero visualmente
+        mainMenu.classList.remove('hidden');
+        showCustomAlert('Se perdió la conexión. Volviendo al menú.');
+    } else {
+        mainMenu.classList.remove('hidden');
+    }
+});
+
+socket.on('disconnect', () => {
+    connectionStatusSpan.textContent = 'OFFLINE';
+    connectionStatusSpan.className = 'status-offline';
+
+    splashScreen.classList.remove('fade-out');
+    const p = splashScreen.querySelector('p');
+    if (p) {
+        p.textContent = 'Conexión perdida. Reconectando...';
+        p.classList.remove('typing-effect');
+        void p.offsetWidth;
+        p.classList.add('typing-effect');
+    }
+});
+
+socket.on('connect_error', () => {
+    const p = splashScreen.querySelector('p');
+    if (p) p.textContent = 'Buscando servidor...';
+    connectionStatusSpan.textContent = 'OFFLINE';
+    connectionStatusSpan.className = 'status-offline';
+});
+
+socket.on('userCount', (count) => {
+    console.log('Usuarios conectados:', count);
+    if (userCountSpan) {
+        userCountSpan.textContent = `Usuarios: ${count}`;
+    }
+});
+
+// --- Menu Logic ---
+btnFindMatch.addEventListener('click', () => {
+    socket.emit('findMatch');
+    mainMenu.classList.add('hidden');
+    msgP.textContent = 'Buscando oponente...';
+});
+
+btnCreatePrivate.addEventListener('click', () => {
+    if (!socket.connected) {
+        showCustomAlert('No hay conexión con el servidor.');
+        return;
+    }
+    socket.emit('createPrivateRoom');
+    waitingPrivateDiv.classList.remove('hidden');
+    // Ocultar botones para evitar múltiples clics
+    btnCreatePrivate.style.display = 'none';
+
+    // Deshabilitar botón de compartir hasta tener código
+    btnShareWhatsapp.disabled = true;
+    btnShareWhatsapp.textContent = 'Generando...';
+
+    // Temporizador de seguridad: Si en 5 segundos no hay código, cancelar
+    roomCreationTimeout = setTimeout(() => {
+        if (btnShareWhatsapp.disabled) { // Si sigue deshabilitado (sin código)
+            showCustomAlert('El servidor tardó en responder. Verifica tu conexión e inténtalo de nuevo.');
+            waitingPrivateDiv.classList.add('hidden');
+            btnCreatePrivate.style.display = ''; // Mostrar botón de nuevo
+            btnShareWhatsapp.textContent = 'Compartir en WhatsApp'; // Resetear texto
+        }
+    }, 5000);
+});
+
+btnJoinPrivate.addEventListener('click', () => {
+    const code = roomCodeInput.value.trim().toUpperCase();
+    if (code.length === 6) {
+        socket.emit('joinPrivateRoom', code);
+    } else {
+        showCustomAlert('El código debe tener 6 caracteres.');
+    }
+});
+
+btnShareWhatsapp.addEventListener('click', () => {
+    const code = displayCodeSpan.textContent;
+    if (code && code !== '---') {
+        const text = `¡Juega conmigo al Zorro y las Gallinas! Entra y usa este código para unirte: *${code}*`;
+        const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+        window.open(url, '_blank');
+    }
+});
+
+// Socket Events
+socket.on('waiting', (msg) => {
+    msgP.textContent = msg;
+});
+
+socket.on('roomCreated', (code) => {
+    clearTimeout(roomCreationTimeout); // Cancelar el temporizador porque ya llegó el código
+    displayCodeSpan.textContent = code;
+
+    // Habilitar botón de compartir
+    btnShareWhatsapp.disabled = false;
+    btnShareWhatsapp.textContent = 'Compartir en WhatsApp';
+});
+
+socket.on('joinError', (msg) => {
+    showCustomAlert(msg);
+});
+
+socket.on('gameStart', (data) => {
+    mainMenu.classList.add('hidden'); // Asegurar que el menú se oculte
+    myRole = data.role;
+    roomId = data.roomId;
+    gameState.turn = data.turn;
+    msgP.textContent = '¡Partida encontrada! Eres ' + myRole.toUpperCase();
+    msgP.style.color = '#4cc9f0';
+    setupInitialPieces();
+    updateStatus();
+    renderPieces();
+});
+
+socket.on('move', (data) => {
+    // Detectar qué pieza se movió comparando con el estado anterior
+    let movedId = null;
+    data.pieces.forEach(newP => {
+        const oldP = gameState.pieces.find(p => p.id === newP.id);
+        if (oldP && (oldP.x !== newP.x || oldP.y !== newP.y)) {
+            movedId = newP.id;
+        }
+    });
+
+    gameState.pieces = data.pieces;
+    gameState.turn = data.turn;
+    selectedPiece = null;
+    updateStatus();
+    renderPieces(movedId);
+    // checkWinCondition(); // Removed: Only the active player should check win to avoid double emit
+});
+
+socket.on('restartGame', () => {
+    gameState.turn = 'gallina';
+    msgP.textContent = '¡Partida reiniciada! Turno de GALLINA';
+    msgP.style.color = '#4cc9f0';
+    setupInitialPieces();
+    updateStatus();
+    renderPieces();
+});
+
+socket.on('gameOver', (winner) => {
+    msgP.textContent = `¡Partida finalizada! Ganaron: ${winner.toUpperCase()}`;
+    gameState.turn = 'finalizado'; // Stop further moves
+    updateStatus();
+    triggerConfetti();
+});
+
+socket.on('playerDisconnected', (msg) => {
+    msgP.textContent = msg;
+    msgP.style.color = 'red';
+    myRole = null;
+    updateStatus();
+});
+
+// --- PWA Logic ---
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+            .then(reg => console.log('Service Worker registrado', reg))
+            .catch(err => console.log('Error SW:', err));
+    });
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    // Mostrar banner solo si no fue descartado previamente
+    if (!localStorage.getItem('pwa-dismissed')) {
+        installBanner.classList.remove('hidden');
+    }
+});
+
+btnInstall.addEventListener('click', async () => {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+            deferredPrompt = null;
+        }
+        installBanner.classList.add('hidden');
+    }
+});
+
+btnDismiss.addEventListener('click', () => {
+    installBanner.classList.add('hidden');
+    localStorage.setItem('pwa-dismissed', 'true');
+});
+
+// --- Custom Modal Logic ---
+function showCustomAlert(message) {
+    const overlay = document.getElementById('custom-modal-overlay');
+    overlay.innerHTML = '';
+    overlay.classList.remove('hidden');
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-content';
+    modal.innerHTML = `
+        <h2>Aviso</h2>
+        <p>${message}</p>
+        <div class="msg-box-buttons">
+            <button id="msg-ok">Aceptar</button>
+        </div>
+    `;
+    overlay.appendChild(modal);
+
+    document.getElementById('msg-ok').addEventListener('click', () => {
+        overlay.classList.add('hidden');
+    });
+}
+
+function showCustomConfirm(message, onConfirm) {
+    const overlay = document.getElementById('custom-modal-overlay');
+    overlay.innerHTML = '';
+    overlay.classList.remove('hidden');
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-content';
+    modal.innerHTML = `
+        <h2>Confirmación</h2>
+        <p>${message}</p>
+        <div class="msg-box-buttons">
+            <button id="msg-yes">Sí</button>
+            <button id="msg-no" class="btn-secondary">No</button>
+        </div>
+    `;
+    overlay.appendChild(modal);
+
+    document.getElementById('msg-yes').addEventListener('click', () => {
+        overlay.classList.add('hidden');
+        if (onConfirm) onConfirm();
+    });
+
+    document.getElementById('msg-no').addEventListener('click', () => {
+        overlay.classList.add('hidden');
+    });
+}
+
+function triggerConfetti() {
+    const duration = 3000;
+    const end = Date.now() + duration;
+
+    (function frame() {
+        // Lanzar confeti desde la izquierda
+        confetti({
+            particleCount: 3,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0 },
+            colors: ['#39ff14', '#4cc9f0', '#fca311', '#ff0054'] // Colores del tema neón
+        });
+        // Lanzar confeti desde la derecha
+        confetti({
+            particleCount: 3,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1 },
+            colors: ['#39ff14', '#4cc9f0', '#fca311', '#ff0054']
+        });
+
+        if (Date.now() < end) {
+            requestAnimationFrame(frame);
+        }
+    }());
+}
+
+// Start
+initBoard();

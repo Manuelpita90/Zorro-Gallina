@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zorro y Gallinas - Multijugador</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#141629">
+</head>
+
+<body>
+    <div id="game-container">
+        <header>
+            <div id="system-info">
+                <span id="connection-status" class="status-offline">OFFLINE</span>
+                <span class="separator">|</span>
+                <span id="user-count">Usuarios: 0</span>
+            </div>
+            <h1>El Zorro y las Gallinas</h1>
+            <div id="status-bar">
+                <div class="status-item">
+                    <span class="status-label">Tu Rol:</span>
+                    <span id="player-role" class="badge bg-secondary">Esperando...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Turno:</span>
+                    <span id="current-turn" class="badge">---</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Capturas:</span>
+                    <div class="capturas-badges">
+                        <span id="score-gallinas" class="badge gallina-badge" title="Gallinas capturadas">0</span>
+                        <span id="score-zorros" class="badge zorro-badge" title="Zorros capturados">0</span>
+                    </div>
+                </div>
+            </div>
+            <p id="game-message">Conectando al servidor...</p>
+        </header>
+
+        <main id="board-container">
+            <!-- SVG para las líneas del tablero -->
+            <svg id="board-lines" viewBox="-10 -10 620 620" preserveAspectRatio="xMidYMid meet">
+                <!-- Se generarán dinámicamente o se pueden poner estáticas -->
+            </svg>
+
+            <!-- Contenedor para los puntos/intersecciones -->
+            <div id="nodes-container"></div>
+
+            <!-- Contenedor para las piezas -->
+            <div id="pieces-container"></div>
+        </main>
+
+        <footer>
+            <div class="footer-buttons">
+                <button id="btn-rules">Ver Reglas</button>
+                <button id="btn-restart">Reiniciar</button>
+                <div class="voice-wrapper">
+                    <button id="btn-voice" class="voice-btn">🎤 Voz</button>
+                    <div id="voice-visualizer" class="visualizer hidden">
+                        <div class="bar"></div>
+                        <div class="bar"></div>
+                        <div class="bar"></div>
+                        <div class="bar"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="rules-modal" class="hidden">
+                <div class="modal-content">
+                    <img src="/img/ajp.png" alt="AJP Logic" class="rules-icon">
+                    <h2>Reglas del Juego</h2>
+                    <p><strong>Objetivo:</strong> Los zorros deben capturar al menos 12 gallinas. Las gallinas deben
+                        evitarlo y acorralar a los zorros o llegar 9 al gallinero (parte superior).</p>
+                    <p><strong>Movimiento:</strong> Las gallinas se mueven 1 espacio adelante, a los lados o diagonal.
+                        NO hacia atrás. Los zorros se mueven 1 espacio en CUALQUIER dirección válida.</p>
+                    <p><strong>Captura:</strong> Los zorros saltan sobre una gallina hacia un espacio vacío detrás para
+                        capturarla.</p>
+                    <button id="btn-close-rules">Cerrar</button>
+                    <div class="game-version">Versión 1.0.0</div>
+                    <div class="dev-credit">Desarrollado por AJP-Logic</div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Elemento de audio para el chat de voz -->
+    <audio id="remote-audio" autoplay></audio>
+
+    <!-- Banner de Instalación PWA -->
+    <div id="install-banner" class="install-banner hidden">
+        <div class="install-content">
+            <img src="/img/ajp.png" alt="Icono" class="install-icon">
+            <div class="install-text">
+                <h3>Instalar App</h3>
+                <p>Juega en pantalla completa y mejor rendimiento.</p>
+            </div>
+        </div>
+        <div class="install-actions">
+            <button id="btn-install">Instalar</button>
+            <button id="btn-dismiss" class="btn-secondary">Ahora no</button>
+        </div>
+    </div>
+
+    <!-- Modal Personalizado (Alert/Confirm) -->
+    <div id="custom-modal-overlay" class="hidden"></div>
+
+    <!-- Splash Screen -->
+    <div id="splash-screen">
+        <div class="splash-content">
+            <img src="/img/ajp.png" alt="AJP Logic" class="splash-logo">
+            <h2>El Zorro y las Gallinas</h2>
+            <div class="loading-spinner"></div>
+            <p class="typing-effect">Conectando al servidor...</p>
+        </div>
+    </div>
+
+    <!-- Main Menu -->
+    <div id="main-menu" class="hidden">
+        <div class="menu-content">
+            <img src="/img/ajp.png" alt="Logo" class="menu-logo">
+            <h2>Menú Principal</h2>
+            <button id="btn-find-match">Partida Rápida</button>
+            <div class="divider"><span>O</span></div>
+            <button id="btn-create-private">Crear Sala Privada</button>
+            <div class="join-private-container">
+                <input type="text" id="room-code-input" placeholder="CÓDIGO" maxlength="6">
+                <button id="btn-join-private">Unirse</button>
+            </div>
+            <div id="waiting-private" class="hidden">
+                <p>Esperando amigo...</p>
+                <div class="code-display">Código: <span id="display-code">---</span></div>
+                <p class="small-text">Comparte este código</p>
+                <button id="btn-share-whatsapp" class="btn-whatsapp">Compartir en WhatsApp</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>

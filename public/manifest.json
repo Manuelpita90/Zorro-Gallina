@@ -1,0 +1,20 @@
+{
+    "name": "El Zorro y las Gallinas",
+    "short_name": "ZorroGallina",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#141629",
+    "theme_color": "#141629",
+    "icons": [
+        {
+            "src": "/img/ajp.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/img/ajp.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
