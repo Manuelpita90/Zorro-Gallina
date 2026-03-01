@@ -104,6 +104,14 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Handle reactions
+    socket.on('reaction', (data) => {
+        const roomId = socket.roomId;
+        if (roomId && rooms[roomId]) {
+            socket.to(roomId).emit('reaction', data);
+        }
+    });
+
     // Handle game win
     socket.on('gameOver', (data) => {
         const roomId = socket.roomId;

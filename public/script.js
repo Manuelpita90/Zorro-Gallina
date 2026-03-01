@@ -34,6 +34,7 @@ const roomCodeInput = document.getElementById('room-code-input');
 const waitingPrivateDiv = document.getElementById('waiting-private');
 const displayCodeSpan = document.getElementById('display-code');
 const btnShareWhatsapp = document.getElementById('btn-share-whatsapp');
+const reactionBtns = document.querySelectorAll('.reaction-btn');
 
 // PWA Elements
 const installBanner = document.getElementById('install-banner');
@@ -1052,6 +1053,41 @@ socket.on('playerDisconnected', (msg) => {
     myRole = null;
     updateStatus();
 });
+
+// --- Reactions Logic ---
+reactionBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        const emoji = btn.textContent;
+        showFloatingEmoji(emoji, false); // false = local (mi reacción)
+
+        if (!isSinglePlayer) {
+            socket.emit('reaction', { emoji });
+        }
+    });
+});
+
+socket.on('reaction', (data) => {
+    showFloatingEmoji(data.emoji, true); // true = remote (reacción del oponente)
+});
+
+function showFloatingEmoji(emoji, isRemote) {
+    const div = document.createElement('div');
+    div.className = 'floating-emoji';
+    div.textContent = emoji;
+
+    const boardRect = boardContainer.getBoundingClientRect();
+
+    // Posición horizontal centrada en el tablero
+    div.style.left = (boardRect.left + boardRect.width / 2) + 'px';
+
+    // Si es remoto (oponente), sale de arriba. Si es local (yo), sale de abajo.
+    div.style.top = isRemote ? (boardRect.top + 50) + 'px' : (boardRect.bottom - 50) + 'px';
+
+    document.body.appendChild(div);
+
+    // Se elimina automáticamente al terminar la animación CSS, pero por seguridad:
+    setTimeout(() => div.remove(), 2000);
+}
 
 // --- PWA Logic ---
 if ('serviceWorker' in navigator) {

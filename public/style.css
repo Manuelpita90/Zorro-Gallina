@@ -912,6 +912,60 @@ button:disabled {
     }
 }
 
+/* --- Reactions System --- */
+#reactions-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px 15px;
+    border-radius: 30px;
+    backdrop-filter: blur(5px);
+    justify-content: center;
+}
+
+.reaction-btn {
+    background: transparent !important;
+    border: none !important;
+    font-size: 1.5rem !important;
+    cursor: pointer;
+    padding: 0 5px !important;
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    box-shadow: none !important;
+    filter: none !important;
+    width: auto !important;
+}
+
+.reaction-btn:hover {
+    transform: scale(1.4) !important;
+}
+
+.floating-emoji {
+    position: fixed;
+    font-size: 3rem;
+    pointer-events: none;
+    z-index: 2000;
+    animation: floatUpFade 2s ease-out forwards;
+    transform: translateX(-50%);
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes floatUpFade {
+    0% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(0.5);
+    }
+
+    50% {
+        transform: translateX(-50%) translateY(-50px) scale(1.2);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-150px) scale(1);
+    }
+}
+
 /* --- Adaptación para Landscape (Horizontal) --- */
 @media (max-height: 600px) and (orientation: landscape) {
     #game-container {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zorro-gallina-v29';
+const CACHE_NAME = 'zorro-gallina-v30';
 const ASSETS = [
     '/',
     '/index.html',
